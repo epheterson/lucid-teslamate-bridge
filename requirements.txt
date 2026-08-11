@@ -1,0 +1,8 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+lucidmotors==1.4.1
+# Undeclared runtime deps of lucidmotors 1.4.1 — it imports both but its
+# pyproject lists only grpcio/protobuf/grpc-stubs, so a clean install fails
+# at import time with ModuleNotFoundError. Pinned here until upstream fixes it.
+async-lru==2.0.4
+tenacity==9.0.0

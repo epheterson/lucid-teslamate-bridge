@@ -1,0 +1,140 @@
+# TeslaMate + lucid-bridge — the the car historian.
+#
+# TeslaMate runs STOCK. It is pointed at lucid-bridge via TESLA_API_HOST /
+# TESLA_AUTH_HOST, which is a supported third-party-proxy configuration (the
+# same mechanism MyTeslaMate and Teslemetry use), so upstream releases can be
+# taken without merging anything.
+#
+# Ports on the Mini are crowded — 3000 is AdGuard, 3030 homepage, 3033 Gitea,
+# 3330 the main Grafana. This stack takes 3040/3041 and nothing else.
+#
+# lucid-bridge is deliberately NOT published to a host port. It holds the only
+# Lucid credential in the stack and only TeslaMate needs to reach it.
+
+services:
+  lucid-bridge:
+    build: .
+    container_name: lucid-bridge
+    restart: always
+    environment:
+      - TZ=UTC
+      - LUCID_TOKEN_FILE=/secrets/lucid-token.json
+      - CACHE_TTL_SECONDS=5
+    volumes:
+      # READ-ONLY on purpose: the refresh token does not rotate, so the
+      # bridge never needs to write it back. Mint/replace it on the host with
+      #   python -m lucid_bridge.login
+      - ${LUCID_TOKEN_HOST_PATH}:/secrets/lucid-token.json:ro
+    networks: [teslamate]
+
+  teslamate:
+    image: teslamate/teslamate:4.0.1
+    container_name: teslamate
+    restart: always
+    depends_on: [database, lucid-bridge]
+    environment:
+      - ENCRYPTION_KEY=${TM_ENCRYPTION_KEY}
+      - DATABASE_USER=teslamate
+      - DATABASE_PASS=${TM_DB_PASS}
+      - DATABASE_NAME=teslamate
+      - DATABASE_HOST=database
+      - MQTT_HOST=mosquitto
+      - TZ=UTC
+      # The three variables that make this whole thing work.
+      - TESLA_API_HOST=http://lucid-bridge:8080
+      - TESLA_AUTH_HOST=http://lucid-bridge:8080
+      - TESLA_AUTH_PATH=/oauth2/v3
+      # Served under a sub-path so the landing page can own garage.example.com/.
+      # VIRTUAL_HOST + URL_PATH are what TeslaMate uses to generate its own
+      # links; get either wrong and every internal link 404s.
+      - VIRTUAL_HOST=garage.example.com
+      - URL_PATH=/teslamate
+      - CHECK_ORIGIN=false
+    ports:
+      - 3040:4000
+    volumes:
+      - ./import:/opt/app/import
+    cap_drop: [all]
+    networks: [teslamate]
+
+  landing:
+    # A static door, nothing else. Deliberately NOT served from lucid-bridge:
+    # that container holds the only Lucid credential and is unpublished on
+    # purpose, so it must not gain a host port just to serve HTML.
+    image: nginx:alpine
+    container_name: garage-landing
+    restart: always
+    volumes:
+      - ./landing:/usr/share/nginx/html:ro
+    ports:
+      - 3042:80
+    networks: [teslamate]
+
+  database:
+    image: postgres:17
+    container_name: teslamate-db
+    restart: always
+    environment:
+      - POSTGRES_USER=teslamate
+      - POSTGRES_PASSWORD=${TM_DB_PASS}
+      - POSTGRES_DB=teslamate
+      - TZ=UTC
+    volumes:
+      - teslamate-db:/var/lib/postgresql/data
+    networks: [teslamate]
+
+  grafana:
+    image: teslamate/grafana:4.0.1
+    container_name: teslamate-grafana
+    restart: always
+    depends_on: [database]
+    environment:
+      - DATABASE_USER=teslamate
+      - DATABASE_PASS=${TM_DB_PASS}
+      - DATABASE_NAME=teslamate
+      - DATABASE_HOST=database
+      - GRAFANA_PASSWD=${TM_GRAFANA_PASS}
+      - GF_SECURITY_ADMIN_PASSWORD=${TM_GRAFANA_PASS}
+      # Cloudflare Access is the authentication boundary for garage-graphs.example.com,
+      # so a second Grafana password would be friction with no added security.
+      # Anonymous gets Viewer ONLY and cannot edit; the admin login still exists
+      # for changes. Consequence: port 3041 is readable on the LAN without a
+      # login — acceptable here, but this must never be routed to WAN by any
+      # path other than the Access-protected one.
+      - GF_SERVER_ROOT_URL=https://garage.example.com/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+      - TZ=UTC
+    ports:
+      - 3041:3000 # LAN only; WAN reaches this at garage.example.com/grafana
+    volumes:
+      - teslamate-grafana:/var/lib/grafana
+    networks: [teslamate]
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: teslamate-mosquitto
+    restart: always
+    command: mosquitto -c /mosquitto-no-auth.conf
+    volumes:
+      - mosquitto-conf:/mosquitto/config
+      - mosquitto-data:/mosquitto/data
+    networks: [teslamate]
+
+volumes:
+  teslamate-db:
+  teslamate-grafana:
+  mosquitto-conf:
+  mosquitto-data:
+
+networks:
+  teslamate:
+    # OrbStack's default 192.168.x pool is fully subnetted on the Mini (32
+    # networks), so a new compose stack cannot allocate one automatically.
+    # Pinning an explicit subnet is the non-destructive fix — the alternative
+    # was pruning networks other stacks may still want.
+    ipam:
+      config:
+        - subnet: 192.168.60.0/24
