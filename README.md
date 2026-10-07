@@ -1,5 +1,7 @@
 # lucid-teslamate-bridge
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/epheterson/lucid-teslamate-bridge/badge)](https://scorecard.dev/viewer/?uri=github.com/epheterson/lucid-teslamate-bridge)
+
 Log a **Lucid** with **TeslaMate**.
 
 TeslaMate supports pointing at a third-party API host via `TESLA_API_HOST` — that's how services like Teslemetry and MyTeslaMate work. This is a small service that answers that API, backed by the Lucid gRPC API. TeslaMate runs **stock and upgradable**, does the real work — drive segmentation, charge sessions, battery degradation, its Grafana dashboards — and never knows the car isn't a Tesla.
