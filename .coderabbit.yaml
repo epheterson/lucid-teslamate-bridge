@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Independent review of each PR, once, when it opens; comment
+# `@coderabbitai review` for another pass after later pushes. Advisory, never
+# a required check: findings are fixed or answered like any outside
+# contribution. Kept quiet: no summary written into the PR description, no
+# walkthrough extras.
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: false
+  poem: false
+  review_status: false
+  in_progress_fortune: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: false
+    drafts: false
+  path_filters:
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.gif"
+    - "!**/*.whl"
+    - "!**/*.tar.gz"
+  path_instructions:
+    - path: "*.py"
+      instructions: >-
+        A small service that answers the Tesla Owner API endpoints TeslaMate
+        calls, backed by the Lucid API. It is read-only: flag any call that
+        sends a command or could wake the car (auto_wake must never be set).
+        The refresh token is mounted read-only and must never be logged,
+        returned in a response, written, or sent anywhere but Lucid's API.
+        Location and VINs go only to TeslaMate on the compose network: flag any
+        new network destination or log line that would carry them out.
+    - path: "app.py"
+      instructions: >-
+        The token endpoint accepts anything because the service is reachable
+        only on the compose network; flag any change that publishes its port
+        or otherwise exposes it. A sleeping car must answer 408 with a body
+        starting "vehicle unavailable:", never stale data.
+    - path: "mapping.py"
+      instructions: >-
+        Maps Lucid's state onto the Tesla Owner API shape. Lucid reports
+        kilometres and TeslaMate converts from miles, so distances must be
+        converted with TeslaMate's own constant; check units and that unknown
+        enum values degrade rather than raise.
+    - path: "{docker-compose.yml,Dockerfile,.env.example}"
+      instructions: >-
+        The bridge must not publish a host port, the token mount must stay
+        read-only, and .env.example must hold placeholders only.
+    - path: "tests/**"
+      instructions: >-
+        Tests must use made-up VINs, tokens and coordinates, never real ones.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Actions must be pinned to full commit SHAs with least-privilege
+        permissions.
+chat:
+  auto_reply: true
